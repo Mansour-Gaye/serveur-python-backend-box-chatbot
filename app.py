@@ -23,8 +23,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Initialisation de l'application Flask
+
+
 app = Flask(__name__)
-CORS(app)
+CORS(app, origins=["https://ai-agency-dakar.netlify.app"])  # Remplacez par votre domaine Netlify
+
 
 def clean_documents(documents):
     for doc in documents:
@@ -33,7 +36,7 @@ def clean_documents(documents):
     return documents
 
 # URL FIXE et UNIQUE pour le RAG
-FIXED_URL = "https://www.vendasta.com/content-library/ai-automation-agency-website-example/"
+FIXED_URL = "https://ai-agency-dakar.netlify.app"
 def create_rag_chain():
     try:
         logger.info(f"Chargement des documents depuis {FIXED_URL}")

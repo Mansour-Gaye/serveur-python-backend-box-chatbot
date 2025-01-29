@@ -4,6 +4,8 @@ langchain
 langchain-community
 langchain-core
 langchain-huggingface
-langchain-ollama
 sentence-transformers
 chromadb
+gunicorn
+python-dotenv
+huggingface-hub

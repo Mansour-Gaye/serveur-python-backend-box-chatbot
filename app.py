@@ -11,6 +11,8 @@ from langchain_ollama import OllamaLLM
 from langchain.prompts import PromptTemplate
 from flask_cors import CORS
 
+
+
 # Configuration du logging
 logging.basicConfig(
     level=logging.INFO,
@@ -23,11 +25,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Initialisation de l'application Flask
-
-
 app = Flask(__name__)
-CORS(app, origins=["https://ai-agency-dakar.netlify.app"])  # Remplacez par votre domaine Netlify
-
+CORS(app)
 
 def clean_documents(documents):
     for doc in documents:
@@ -63,7 +62,7 @@ def create_rag_chain():
                 "Vous êtes un assistant utile pour une entreprise. Vous fournissez des informations factuelles, concises et neutres sur l'entreprise."
                 "Ne faites pas référence à des appels à l'action, à des entreprises externes ou à du contenu promotionnel, sauf si cela est explicitement demandé. Concentrez-vous uniquement sur le contexte de l'entreprise et les questions de l'utilisateur." )
         )
-
+        
 
         # 6. Personnaliser le prompt
         prompt_template = PromptTemplate(
@@ -118,7 +117,7 @@ def chat():
         logger.info(f"Message reçu : {user_message}")
         
         # Utiliser le modèle RAG avec les paramètres
-        response = global_rag_chain.run({
+        response = global_rag_chain.invoke({
             "query": user_message,  # La question de l'utilisateur
             "max_tokens": 150,      # Limite la réponse à environ 150 tokens
             "temperature": 0.5      # Garde les réponses factuelles avec moins de créativité
@@ -127,7 +126,7 @@ def chat():
         logger.info(f"Réponse générée : {response}")
         
         return jsonify({
-            'response': response
+            'response': response['result']
         })
     
     except Exception as e:

@@ -34,7 +34,8 @@ def clean_documents(documents):
     return documents
 
 # URL FIXE et UNIQUE pour le RAG
-FIXED_URL = os.getenv("FIXED_URL", "https://ai-agency-dakar.netlify.app")
+FIXED_URL = os.getenv("FIXED_URL", "https://www.vendasta.com/content-library/ai-automation-agency-website-example/")
+
 def create_rag_chain():
     try:
         logger.info(f"Chargement des documents depuis {FIXED_URL}")
@@ -49,7 +50,10 @@ def create_rag_chain():
         splits = text_splitter.split_documents(documents)
 
         # 3. Créer les embeddings
-        embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        api_key = os.getenv("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")
+        if not api_key:
+            raise ValueError("Hugging Face API key not found. Please set the HUGGING_FACE_API_KEY environment variable.")
+        embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2", api_key=api_key)
 
         # 4. Créer le vectorstore
         vectorstore = Chroma.from_documents(documents=splits, embedding=embeddings)

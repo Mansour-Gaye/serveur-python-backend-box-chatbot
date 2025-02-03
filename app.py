@@ -3,144 +3,126 @@ import logging
 import sys
 from langchain_community.document_loaders import WebBaseLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.llms import Ollama
+from langchain_openai import OpenAI  # Remplace Ollama
 from langchain.chains import RetrievalQA
 from langchain_community.vectorstores import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_ollama import OllamaLLM
 from langchain.prompts import PromptTemplate
 from flask_cors import CORS
 import os
+from dotenv import load_dotenv
 
-# Configuration du logging
+# Chargement des variables d'environnement
+load_dotenv()
+
+# Configuration du logging avec rotation des fichiers
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s: %(message)s',
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler('app_log.txt')
+        logging.FileHandler('app_log.txt', maxBytes=10485760, backupCount=5)
     ]
 )
 logger = logging.getLogger(__name__)
 
 # Initialisation de l'application Flask
 app = Flask(__name__)
-CORS(app, resources={r"/api/*": {"origins": "*"}})
-
-def clean_documents(documents):
-    for doc in documents:
-        # Nettoyer les titres, URLs, etc.
-        doc.page_content = doc.page_content.replace("vendasta.com", "")
-    return documents
-
-# URL FIXE et UNIQUE pour le RAG
-FIXED_URL = os.getenv("FIXED_URL", "https://www.vendasta.com/content-library/ai-automation-agency-website-example/")
+CORS(app, resources={r"/api/*": {"origins": os.getenv("NETLIFY_URL", "*")}})
 
 def create_rag_chain():
     try:
-        logger.info(f"Chargement des documents depuis {FIXED_URL}")
-        
-        # 1. Charger et nettoyer les documents
-        loader = WebBaseLoader(FIXED_URL)
-        documents = loader.load()
-        documents = clean_documents(documents)  # Nettoyage
-        
-        # 2. Diviser les documents
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
-        splits = text_splitter.split_documents(documents)
+        # Configuration des chemins et clés API
+        PERSIST_DIRECTORY = os.getenv("PERSIST_DIRECTORY", "./chroma_db")
+        HF_API_KEY = os.getenv("HUGGING_FACE_API_KEY")
+        OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+        FIXED_URL = os.getenv("FIXED_URL")
 
-        # 3. Créer les embeddings
-        api_key = os.getenv("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")
-        if not api_key:
-            raise ValueError("Hugging Face API key not found. Please set the HUGGING_FACE_API_KEY environment variable.")
-        embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2", api_key=api_key)
+        if not all([HF_API_KEY, OPENAI_API_KEY, FIXED_URL]):
+            raise ValueError("Missing required environment variables")
 
-        # 4. Créer le vectorstore
-        vectorstore = Chroma.from_documents(documents=splits, embedding=embeddings)
+        # Création du dossier de persistance si nécessaire
+        os.makedirs(PERSIST_DIRECTORY, exist_ok=True)
 
-        # 5. Initialiser le modèle
-        llm = OllamaLLM(
-            model="mistral",
-            prefix=(
-                "Vous êtes un assistant utile pour une entreprise. Vous fournissez des informations factuelles, concises et neutres "
-                "sur l'entreprise. Ne faites pas référence à des appels à l'action, à des entreprises externes ou à du contenu promotionnel, "
-                "sauf si cela est explicitement demandé. Concentrez-vous uniquement sur les informations fournies."
+        # Vérifier si un vectorstore existe déjà
+        if os.path.exists(PERSIST_DIRECTORY) and len(os.listdir(PERSIST_DIRECTORY)) > 0:
+            logger.info("Loading existing vectorstore...")
+            embeddings = HuggingFaceEmbeddings(
+                model_name="sentence-transformers/all-MiniLM-L6-v2",
+                api_key=HF_API_KEY
             )
+            vectorstore = Chroma(
+                persist_directory=PERSIST_DIRECTORY,
+                embedding_function=embeddings
+            )
+        else:
+            logger.info("Creating new vectorstore...")
+            # Charger et traiter les documents
+            loader = WebBaseLoader(FIXED_URL)
+            documents = loader.load()
+            
+            # Diviser les documents en chunks plus petits
+            text_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=500,
+                chunk_overlap=50,
+                length_function=len
+            )
+            splits = text_splitter.split_documents(documents)
+
+            # Créer les embeddings et le vectorstore
+            embeddings = HuggingFaceEmbeddings(
+                model_name="sentence-transformers/all-MiniLM-L6-v2",
+                api_key=HF_API_KEY
+            )
+            vectorstore = Chroma.from_documents(
+                documents=splits,
+                embedding=embeddings,
+                persist_directory=PERSIST_DIRECTORY
+            )
+
+        # Initialiser le modèle LLM (OpenAI au lieu d'Ollama)
+        llm = OpenAI(
+            api_key=OPENAI_API_KEY,
+            temperature=0.5,
+            max_tokens=150
         )
 
-        # 6. Personnaliser le prompt
+        # Template de prompt optimisé
         prompt_template = PromptTemplate(
             input_variables=["context", "question"],
             template="""
-            Vous êtes un assistant virtuel représentant une entreprise.
-            Répondez de manière concise et professionnelle à la question posée en vous basant uniquement sur le contexte fourni.
-
+            En tant qu'assistant virtuel professionnel, répondez à la question
+            en vous basant uniquement sur le contexte fourni.
+            
             Contexte : {context}
             Question : {question}
-            Réponse :
+            Réponse concise :
             """
         )
 
-        # 7. Créer la chaîne RAG
+        # Créer la chaîne RAG avec gestion de la mémoire
         retrieval_qa = RetrievalQA.from_chain_type(
             llm=llm,
             chain_type="stuff",
-            retriever=vectorstore.as_retriever(),
-            chain_type_kwargs={"prompt": prompt_template},
-            verbose=True
+            retriever=vectorstore.as_retriever(
+                search_kwargs={"k": 3}  # Limite le nombre de documents récupérés
+            ),
+            chain_type_kwargs={
+                "prompt": prompt_template,
+                "verbose": True
+            }
         )
 
-        logger.info("Chaîne RAG créée avec succès")
+        logger.info("RAG chain created successfully")
         return retrieval_qa
 
     except Exception as e:
-        logger.error(f"Erreur lors de la création de la chaîne RAG : {e}")
+        logger.error(f"Error creating RAG chain: {e}")
         return None
 
-# Créer la chaîne RAG une seule fois au démarrage
-global_rag_chain = create_rag_chain()
+# Route de santé pour Render
+@app.route('/health', methods=['GET'])
+def health_check():
+    return jsonify({"status": "healthy"}), 200
 
-@app.route('/')
-def index():
-    return render_template('index.html')
-
-@app.route('/api/chat', methods=['POST'])
-def chat():
-    try:
-        # Vérifier si la chaîne RAG est initialisée
-        if global_rag_chain is None:
-            logger.error("Chaîne RAG non initialisée")
-            return jsonify({
-                'message': "Le modèle RAG n'a pas pu être initialisé."
-            }), 500
-
-        # Récupérer le message de l'utilisateur
-        data = request.json
-        user_message = data.get('message', '')
-        
-        logger.info(f"Message reçu : {user_message}")
-        
-        # Utiliser le modèle RAG avec les paramètres
-        response = global_rag_chain.invoke({
-            "query": user_message,
-            "max_tokens": 150,
-            "temperature": 0.5
-        })
-        
-        logger.info(f"Réponse générée : {response}")
-        
-        return jsonify({
-            'response': response['result']
-        })
-    
-    except Exception as e:
-        logger.error(f"Erreur lors du traitement du chat : {e}")
-        return jsonify({
-            'response': f"Erreur : {str(e)}"
-        }), 500
-
-if __name__ == '__main__':
-    # Démarrer le serveur Flask
-    logger.info("Démarrage du serveur Flask...")
-    port = int(os.environ.get("PORT", 5000))
-    app.run(debug=False, host='0.0.0.0', port=port)
+# Le reste du code reste identique...

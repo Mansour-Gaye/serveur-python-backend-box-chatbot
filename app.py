@@ -26,12 +26,12 @@ app = Flask(__name__)
 CORS(app)
 
 # Initialisation du modèle Hugging Face
-HF_API_KEY = "VOTRE_CLE_API_HUGGING_FACE"
+HF_API_KEY = "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"
 pipe = pipeline("text-generation", model="microsoft/phi-2", token=HF_API_KEY)
 
 def clean_documents(documents):
     for doc in documents:
-        doc.page_content = doc.page_content.replace("vendasta.com", "")
+        doc.page_content = doc.page_content.replace("ai-agency-dakar.netlify.app", "")
     return documents
 
 # URL FIXE pour le RAG

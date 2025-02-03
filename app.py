@@ -26,12 +26,12 @@ app = Flask(__name__)
 CORS(app)
 
 # Initialisation du modèle Hugging Face
-HF_API_KEY = "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"
+HF_API_KEY = "VOTRE_CLE_API_HUGGING_FACE"
 pipe = pipeline("text-generation", model="microsoft/phi-2", token=HF_API_KEY)
 
 def clean_documents(documents):
     for doc in documents:
-        doc.page_content = doc.page_content.replace("ai-agency-dakar.netlify.app", "")
+        doc.page_content = doc.page_content.replace("vendasta.com", "")
     return documents
 
 # URL FIXE pour le RAG
@@ -41,22 +41,22 @@ def create_rag_chain():
     try:
         logger.info(f"Chargement des documents depuis {FIXED_URL}")
         
-        # 1. Charger et nettoyer les documents
+        # Charger et nettoyer les documents
         loader = WebBaseLoader(FIXED_URL)
-        documents = loader.load()
+        documents = loader.load()[:5]  # Limiter à 5 documents pour économiser la mémoire
         documents = clean_documents(documents)
 
-        # 2. Diviser les documents
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
+        # Diviser les documents en plus petits chunks
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=300, chunk_overlap=30)
         splits = text_splitter.split_documents(documents)
 
-        # 3. Créer les embeddings
-        embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        # Créer des embeddings plus légers
+        embeddings = HuggingFaceEmbeddings(model_name="paraphrase-MiniLM-L3-v2")
 
-        # 4. Créer le vectorstore
+        # Créer le vectorstore
         vectorstore = Chroma.from_documents(documents=splits, embedding=embeddings)
 
-        # 5. Personnaliser le prompt
+        # Personnaliser le prompt
         prompt_template = PromptTemplate(
             input_variables=["context", "question"],
             template="""
@@ -69,7 +69,7 @@ def create_rag_chain():
             """
         )
 
-        # 6. Créer la chaîne RAG
+        # Créer la chaîne RAG
         retrieval_qa = RetrievalQA.from_chain_type(
             llm=None,
             chain_type="stuff",
@@ -112,7 +112,7 @@ def chat():
         context = rag_response['result']
 
         # Générer une réponse avec phi-2
-        hf_response = pipe(f"{context}\nQuestion: {user_message}\nRéponse:", max_new_tokens=150, temperature=0.5)
+        hf_response = pipe(f"{context}\nQuestion: {user_message}\nRéponse:", max_new_tokens=100, temperature=0.5)
         answer = hf_response[0]['generated_text']
 
         logger.info(f"Réponse générée : {answer}")
@@ -125,3 +125,4 @@ def chat():
 if __name__ == '__main__':
     logger.info("Démarrage du serveur Flask...")
     app.run(debug=True, host='0.0.0.0', port=8080)
+

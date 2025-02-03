@@ -10,8 +10,7 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_ollama import OllamaLLM
 from langchain.prompts import PromptTemplate
 from flask_cors import CORS
-
-
+import os
 
 # Configuration du logging
 logging.basicConfig(
@@ -26,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 # Initialisation de l'application Flask
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 def clean_documents(documents):
     for doc in documents:
@@ -35,7 +34,7 @@ def clean_documents(documents):
     return documents
 
 # URL FIXE et UNIQUE pour le RAG
-FIXED_URL = "https://ai-agency-dakar.netlify.app"
+FIXED_URL = os.getenv("FIXED_URL", "https://ai-agency-dakar.netlify.app")
 def create_rag_chain():
     try:
         logger.info(f"Chargement des documents depuis {FIXED_URL}")
@@ -59,10 +58,11 @@ def create_rag_chain():
         llm = OllamaLLM(
             model="mistral",
             prefix=(
-                "Vous êtes un assistant utile pour une entreprise. Vous fournissez des informations factuelles, concises et neutres sur l'entreprise."
-                "Ne faites pas référence à des appels à l'action, à des entreprises externes ou à du contenu promotionnel, sauf si cela est explicitement demandé. Concentrez-vous uniquement sur le contexte de l'entreprise et les questions de l'utilisateur." )
+                "Vous êtes un assistant utile pour une entreprise. Vous fournissez des informations factuelles, concises et neutres "
+                "sur l'entreprise. Ne faites pas référence à des appels à l'action, à des entreprises externes ou à du contenu promotionnel, "
+                "sauf si cela est explicitement demandé. Concentrez-vous uniquement sur les informations fournies."
+            )
         )
-        
 
         # 6. Personnaliser le prompt
         prompt_template = PromptTemplate(
@@ -100,7 +100,7 @@ global_rag_chain = create_rag_chain()
 def index():
     return render_template('index.html')
 
-@app.route('/chat', methods=['POST'])
+@app.route('/api/chat', methods=['POST'])
 def chat():
     try:
         # Vérifier si la chaîne RAG est initialisée
@@ -118,9 +118,9 @@ def chat():
         
         # Utiliser le modèle RAG avec les paramètres
         response = global_rag_chain.invoke({
-            "query": user_message,  # La question de l'utilisateur
-            "max_tokens": 150,      # Limite la réponse à environ 150 tokens
-            "temperature": 0.5      # Garde les réponses factuelles avec moins de créativité
+            "query": user_message,
+            "max_tokens": 150,
+            "temperature": 0.5
         })
         
         logger.info(f"Réponse générée : {response}")
@@ -138,4 +138,5 @@ def chat():
 if __name__ == '__main__':
     # Démarrer le serveur Flask
     logger.info("Démarrage du serveur Flask...")
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(debug=False, host='0.0.0.0', port=port)

@@ -11,6 +11,7 @@ from langchain.prompts import PromptTemplate
 from langchain.chains import RetrievalQA
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
+from langchain.llms import HuggingFaceHub
 
 # Charger les variables d'environnement
 load_dotenv()
@@ -67,9 +68,11 @@ def create_rag_chain():
             template="""...
             """
         )
+        # Créez une instance de votre modèle Hugging Face
+        model = HuggingFaceHub(repo_id="mistralai/Mistral-7B-Instruct-v0.1", api_key=HF_API_KEY)
 
         retrieval_qa = RetrievalQA.from_chain_type(
-            llm=None,
+            llm=model,
             chain_type="stuff",
             retriever=vectorstore.as_retriever(),
             chain_type_kwargs={"prompt": prompt_template},

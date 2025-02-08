@@ -1,11 +1,9 @@
 flask
 flask-cors
-langchain
-langchain-community
-langchain-core
-langchain-huggingface
-sentence-transformers
-chromadb
 gunicorn
 python-dotenv
-huggingface-hub
+transformers==4.32.0
+torch==2.0.0
+sentence-transformers
+langchain-community
+langchain-text-splitters

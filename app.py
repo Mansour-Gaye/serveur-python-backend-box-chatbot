@@ -1,25 +1,13 @@
-# requirements.txt
-flask==2.0.1
-flask-cors==3.0.10
-langchain==0.1.0
-langchain_community==0.0.10
-python-dotenv==0.19.2
-gunicorn==20.1.0
-transformers==4.34.0
-sentence-transformers==2.2.2
-
-# main.py
 from flask import Flask, request, jsonify
 import logging
 import sys
 import os
 from flask_cors import CORS
 from dotenv import load_dotenv
+from transformers import pipeline
 from langchain_community.document_loaders import WebBaseLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings
-from transformers import pipeline
+from sentence_transformers import SentenceTransformer
 import torch
 
 # Chargement des variables d'environnement
@@ -28,112 +16,90 @@ load_dotenv()
 # Configuration du logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s: %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-    ]
+    format="%(asctime)s - %(levelname)s: %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger(__name__)
 
-# Initialisation de l'application Flask
+# Initialisation de Flask
 app = Flask(__name__)
 CORS(app)
 
-# Configuration depuis les variables d'environnement
-HF_API_KEY = os.getenv('HF_API_KEY')
-FIXED_URL = os.getenv('FIXED_URL', 'https://ai-agency-dakar.netlify.app')
-PERSIST_DIRECTORY = os.getenv('PERSIST_DIRECTORY', '/tmp/chroma_db')
+# Récupération des variables d'environnement
+HF_API_KEY = os.getenv("HF_API_KEY")
+FIXED_URL = os.getenv("FIXED_URL", "https://ai-agency-dakar.netlify.app")
 
-# Initialisation du modèle avec gestion de la mémoire
+# Modèle d'embed léger
+embedder = SentenceTransformer("paraphrase-MiniLM-L3-v2")
+
+# Stockage RAG en mémoire
+vectorstore = {}
+
+# Chargement et vectorisation des documents
+def create_rag_chain():
+    global vectorstore
+    try:
+        loader = WebBaseLoader(FIXED_URL)
+        documents = loader.load()[:2]  # Charge moins de docs
+
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=200, chunk_overlap=20)
+        splits = text_splitter.split_documents(documents)
+
+        vectorstore = {doc.page_content: embedder.encode(doc.page_content) for doc in splits}
+        logger.info("RAG chargé en mémoire ✅")
+
+    except Exception as e:
+        logger.error(f"Erreur RAG : {e}")
+        vectorstore = {}
+
+# Chargement d'un modèle Hugging Face léger
 def init_model():
     try:
-        # Utiliser un modèle plus léger pour Render
         return pipeline(
             "text-generation",
-            model="distilgpt2",
+            model="facebook/opt-125m",
             token=HF_API_KEY,
-            device_map='auto'  # Utilise CPU si pas de GPU
+            device=0 if torch.cuda.is_available() else -1  # CPU
         )
     except Exception as e:
         logger.error(f"Erreur d'initialisation du modèle: {e}")
         return None
 
 pipe = init_model()
+create_rag_chain()
 
-def create_rag_chain():
-    try:
-        # Vérifier si le vectorstore existe déjà
-        if os.path.exists(PERSIST_DIRECTORY):
-            embeddings = HuggingFaceEmbeddings(
-                model_name="paraphrase-MiniLM-L3-v2",
-                cache_folder=PERSIST_DIRECTORY
-            )
-            return Chroma(
-                persist_directory=PERSIST_DIRECTORY,
-                embedding_function=embeddings
-            )
-
-        # Création d'un nouveau vectorstore
-        loader = WebBaseLoader(FIXED_URL)
-        documents = loader.load()[:3]  # Limite encore plus stricte pour Render
-        
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=200,  # Chunks plus petits
-            chunk_overlap=20
-        )
-        splits = text_splitter.split_documents(documents)
-
-        embeddings = HuggingFaceEmbeddings(
-            model_name="paraphrase-MiniLM-L3-v2",
-            cache_folder=PERSIST_DIRECTORY
-        )
-
-        vectorstore = Chroma.from_documents(
-            documents=splits,
-            embedding=embeddings,
-            persist_directory=PERSIST_DIRECTORY
-        )
-        
-        return vectorstore
-
-    except Exception as e:
-        logger.error(f"Erreur RAG : {e}")
-        return None
-
-# Initialisation au démarrage
-vectorstore = create_rag_chain()
-
-@app.route('/health')
+@app.route("/health")
 def health():
     return jsonify({"status": "healthy"}), 200
 
-@app.route('/chat', methods=['POST'])
+@app.route("/chat", methods=["POST"])
 def chat():
     try:
         if not vectorstore or not pipe:
-            return jsonify({
-                'error': "Services non initialisés"
-            }), 500
+            return jsonify({"error": "Modèle ou RAG non initialisé"}), 500
 
         data = request.json
-        user_message = data.get('message', '')
-        
-        # Récupération du contexte
-        docs = vectorstore.similarity_search(user_message, k=1)
-        context = docs[0].page_content if docs else ""
+        user_message = data.get("message", "")
 
-        # Génération de la réponse
+        # Recherche du contexte
+        query_embedding = embedder.encode(user_message)
+        best_match = max(vectorstore.items(), key=lambda x: torch.cosine_similarity(
+            torch.tensor(x[1]), torch.tensor(query_embedding), dim=0
+        ))
+
+        context = best_match[0] if best_match else ""
+
+        # Génération de réponse
         prompt = f"Context: {context}\nQuestion: {user_message}\nRéponse:"
         response = pipe(prompt, max_new_tokens=50, temperature=0.7)
-        answer = response[0]['generated_text']
+        answer = response[0]["generated_text"]
 
-        return jsonify({'response': answer})
+        return jsonify({"response": answer})
 
     except Exception as e:
         logger.error(f"Erreur: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
-if __name__ == '__main__':
-    port = int(os.getenv('PORT', 8080))
-    app.run(host='0.0.0.0', port=port)
-
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)

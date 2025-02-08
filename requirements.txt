@@ -1,16 +1,13 @@
-flask
-flask-cors
-gunicorn
-python-dotenv
-requests
-langchain-community
-langchain-text-splitters
-langchain-huggingface
-sentence-transformers
-faiss-cpu
-beautifulsoup4
-langchain
-huggingface_hub
+Flask==2.2.2
+Flask-CORS==3.1.1
+python-dotenv==1.0.0
+requests==2.28.2
+faiss-cpu==1.7.2
+langchain==0.0.195
+langchain-huggingface==0.0.24
+langchain-community==0.0.24
+langchain-text-splitters==0.0.7
+
 
 
 

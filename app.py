@@ -10,6 +10,9 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain.prompts import PromptTemplate
 from langchain.chains import RetrievalQA
 from langchain_community.vectorstores import FAISS
+import faiss
+faiss.omp_set_num_threads(0.1)  # Ajuste selon le nombre de cœurs CPU disponibles
+
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain.llms import HuggingFaceHub
 from langchain_huggingface import HuggingFaceEndpoint
@@ -61,7 +64,7 @@ def create_rag_chain():
         logger.info(f"Documents divisés en {len(splits)} chunks.")
 
         embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-        vectorstore = FAISS.from_documents(splits, embeddings)
+        vectorstore = FAISS.from_documents(splits, embeddings, faiss_gpu=True)
         logger.info(f"Vectorisation réussie avec FAISS.")
 
         prompt_template = PromptTemplate(
@@ -71,13 +74,16 @@ def create_rag_chain():
         )
         
         # Charger et utiliser HuggingFaceEndpoint
-        model = HuggingFaceEndpoint(repo_id="mistralai/Mistral-7B-Instruct-v0.1", api_key=HF_API_KEY)
+        model = HuggingFaceEndpoint(
+             repo_id="mistralai/Mistral-7B-Instruct-v0.1",
+             model_kwargs={"api_key": HF_API_KEY}
+       )
 
         retrieval_qa = RetrievalQA.from_chain_type(
             llm=model,
             chain_type="stuff",
             retriever=vectorstore.as_retriever(),
-            chain_type_kwargs={"prompt": prompt_template},
+            chain_type_kwargs={"prompt": prompt_template, "document_variable_name": "context"},
             verbose=True
         )
        

@@ -11,7 +11,7 @@ from langchain.prompts import PromptTemplate
 from langchain.chains import RetrievalQA
 from langchain_community.vectorstores import FAISS
 import faiss
-faiss.omp_set_num_threads(0.1)  # Ajuste selon le nombre de cœurs CPU disponibles
+faiss.omp_set_num_threads(1)  # Ajuste selon le nombre de cœurs CPU disponibles
 
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain.llms import HuggingFaceHub

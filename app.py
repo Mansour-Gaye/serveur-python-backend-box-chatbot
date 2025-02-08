@@ -71,8 +71,8 @@ def create_rag_chain():
 
         prompt_template = PromptTemplate(
             input_variables=["context", "question"],
-            template="""...
-            """
+            template="Contexte : {context}\nQuestion : {question}\nRéponse :"
+       
         )
         
         # Charger et utiliser HuggingFaceEndpoint

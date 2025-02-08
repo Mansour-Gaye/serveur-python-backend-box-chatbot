@@ -9,5 +9,8 @@ langchain-huggingface
 sentence-transformers
 faiss-cpu
 beautifulsoup4
+langchain
+huggingface_hub
+
 
 

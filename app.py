@@ -12,10 +12,11 @@ from langchain.chains import RetrievalQA
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain.llms import HuggingFaceHub
+from langchain_huggingface import HuggingFaceEndpoint
 
 # Charger les variables d'environnement
 load_dotenv()
-HF_API_KEY = os.getenv("HF_API_KEY")
+HF_API_KEY = os.getenv("HUGGINGFACEHUB_API_TOKEN")
 
 # Configuration du logging
 logging.basicConfig(
@@ -68,8 +69,9 @@ def create_rag_chain():
             template="""...
             """
         )
-        # Créez une instance de votre modèle Hugging Face
-        model = HuggingFaceHub(repo_id="mistralai/Mistral-7B-Instruct-v0.1", api_key=HF_API_KEY)
+        
+        # Charger et utiliser HuggingFaceEndpoint
+        model = HuggingFaceEndpoint(repo_id="mistralai/Mistral-7B-Instruct-v0.1", api_key=HF_API_KEY)
 
         retrieval_qa = RetrievalQA.from_chain_type(
             llm=model,

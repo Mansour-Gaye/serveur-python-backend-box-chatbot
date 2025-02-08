@@ -77,19 +77,28 @@ def create_rag_chain():
         
         # Charger et utiliser HuggingFaceEndpoint
         model = HuggingFaceEndpoint(
-             repo_id="mistralai/Mistral-7B-Instruct-v0.1",
-             model_kwargs={"api_key": HF_API_KEY}
-       )
+              repo_id="mistralai/Mistral-7B-Instruct-v0.1",
+              huggingfacehub_api_token=HF_API_KEY,  # Assurez-vous que cette variable est bien définie
+              model_kwargs={"temperature": 0.5, "max_new_tokens": 150}
+        )
+        if not HF_API_KEY:
+             logger.error("⚠️ La clé API Hugging Face n'est pas définie ! Vérifiez votre fichier .env")
+
+
 
         retrieval_qa = RetrievalQA.from_chain_type(
             llm=model,
             chain_type="stuff",
             retriever=vectorstore.as_retriever(),
-            chain_type_kwargs={"prompt": prompt_template, "document_variable_name": "context"},
+            chain_type_kwargs={
+               "prompt": prompt_template,
+               "input_key": "question",
+               "output_key": "response",
+               "document_variable_name": "context"
+            },
             verbose=True
         )
        
-
         logger.info("✅ Chaîne RAG prête")
         return retrieval_qa
 

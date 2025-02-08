@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 # Initialisation de l'application Flask
 app = Flask(__name__)
-CORS(app, resources={
+CORS(app, resources={ 
     r"/*": {
         "origins": [
             "http://localhost:3000",  # Pour le développement local
@@ -48,64 +48,70 @@ CORS(app, resources={
 # URL FIXE et UNIQUE pour le RAG
 FIXED_URL = "https://www.vendasta.com/content-library/ai-automation-agency-website-example/"
 os.environ['USER_AGENT'] = 'YourAppName/1.0'
+
+FAISS_INDEX_PATH = "faiss_index"  # Chemin d'enregistrement du FAISS
+
 def clean_documents(documents):
     for doc in documents:
         doc.page_content = doc.page_content.replace("vendasta.com", "")
     return documents
 
+def save_faiss_index(vectorstore):
+    """ Sauvegarde l'index FAISS sur disque """
+    vectorstore.save_local(FAISS_INDEX_PATH)
+    logger.info("✅ Index FAISS sauvegardé.")
+
+def load_faiss_index():
+    """ Charge l'index FAISS depuis disque """
+    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    if os.path.exists(FAISS_INDEX_PATH):
+        logger.info("🔄 Chargement de FAISS depuis le disque...")
+        return FAISS.load_local(FAISS_INDEX_PATH, embeddings)
+    else:
+        logger.info("🚨 Aucun index FAISS trouvé. Recréation...")
+        return None
+
 def create_rag_chain():
     try:
-        logger.info(f"🔄 Chargement des documents depuis {FIXED_URL}")
-        loader = WebBaseLoader(FIXED_URL)
-        documents = loader.load()[:2]  # Limite à 2 documents
-        logger.info(f"Documents chargés : {len(documents)}")
-        documents = clean_documents(documents)
+        # Charger FAISS ou le créer si inexistant
+        vectorstore = load_faiss_index()
+        if vectorstore:
+            logger.info("✅ FAISS chargé depuis le disque.")
+        else:
+            logger.info(f"🔄 Chargement des documents depuis {FIXED_URL}")
+            loader = WebBaseLoader(FIXED_URL)
+            documents = loader.load()[:2]  # Limite à 2 documents
+            documents = clean_documents(documents)
 
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=300, chunk_overlap=50)
-        splits = text_splitter.split_documents(documents)
-        logger.info(f"Documents divisés en {len(splits)} chunks.")
+            text_splitter = RecursiveCharacterTextSplitter(chunk_size=300, chunk_overlap=50)
+            splits = text_splitter.split_documents(documents)
+            logger.info(f"📄 {len(splits)} chunks générés.")
 
-        embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-        vectorstore = FAISS.from_documents(splits, embeddings)
-        logger.info(f"Vectorisation réussie avec FAISS.")
+            embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+            vectorstore = FAISS.from_documents(splits, embeddings)
 
-        prompt_template = PromptTemplate(
-            input_variables=["context", "question"],
-            template="Contexte : {context}\nQuestion : {question}\nRéponse :"
-       
-        )
-        
-        # Charger et utiliser HuggingFaceEndpoint
+            save_faiss_index(vectorstore)  # Sauvegarde FAISS
+
+        # Charger Hugging Face Endpoint
         model = HuggingFaceEndpoint(
-              repo_id="mistralai/Mistral-7B-Instruct-v0.1",
-              temperature=0.5, 
-              max_new_tokens=150
+            repo_id="mistralai/Mistral-7B-Instruct-v0.1",
+            temperature=0.5, 
+            max_new_tokens=150
         )
-        if not HF_API_KEY:
-             logger.error("⚠️ La clé API Hugging Face n'est pas définie ! Vérifiez votre fichier .env")
-
-
 
         retrieval_qa = RetrievalQA.from_chain_type(
             llm=model,
             chain_type="stuff",
             retriever=vectorstore.as_retriever(),
-            chain_type_kwargs={
-               "prompt": prompt_template,
-               "input_key": "question",
-               "output_key": "response",
-               "document_variable_name": "context"
-            },
             verbose=True
         )
-       
+
         logger.info("✅ Chaîne RAG prête")
         return retrieval_qa
 
     except Exception as e:
         logger.error(f"🚨 Erreur RAG : {e}")
         return None
-
 
 # Initialisation de la chaîne RAG
 global_rag_chain = create_rag_chain()
@@ -116,7 +122,7 @@ def query_huggingface_api(prompt):
         API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1"
         headers = {"Authorization": f"Bearer {HF_API_KEY}"}
         payload = {"inputs": prompt, "parameters": {"max_new_tokens": 150, "temperature": 0.5}}
-        
+
         response = requests.post(API_URL, headers=headers, json=payload)
         response.raise_for_status()
         output = response.json()
@@ -127,7 +133,6 @@ def query_huggingface_api(prompt):
     except Exception as e:
         logger.error(f"🚨 Erreur API Hugging Face: {e}")
         return "Erreur lors de la génération de texte."
-
 
 @app.route("/chat", methods=["POST"])
 def chat():
@@ -140,14 +145,15 @@ def chat():
         user_message = data.get("message", "")
         logger.info(f"💬 Message reçu : {user_message}")
 
-        # Recherche dans la base RAG
+        # Recherche dans FAISS
         retrieval_response = global_rag_chain.invoke({"query": user_message})
-        logger.info(f"💬 Réponse récupération contextuelle: {retrieval_response}")
         context = retrieval_response["result"]
 
-       
+        # Vérifier si FAISS a trouvé un contexte pertinent
+        if len(context) > 50:  # Si le contexte est riche, on le renvoie directement
+            return jsonify({"response": context})
 
-        # Génération via Hugging Face API
+        # Sinon, appeler l'API Hugging Face
         full_prompt = f"Context: {context}\nQuestion: {user_message}\nRéponse:"
         model_response = query_huggingface_api(full_prompt)
 

@@ -49,38 +49,27 @@ def clean_documents(documents):
 def create_rag_chain():
     try:
         logger.info(f"🔄 Chargement des documents depuis {FIXED_URL}")
-
-        # 1️⃣ Charger et nettoyer les documents
         loader = WebBaseLoader(FIXED_URL)
         documents = loader.load()[:2]  # Limite à 2 documents
+        logger.info(f"Documents chargés : {len(documents)}")
         documents = clean_documents(documents)
 
-        # 2️⃣ Découper les documents
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=300, chunk_overlap=50)
         splits = text_splitter.split_documents(documents)
+        logger.info(f"Documents divisés en {len(splits)} chunks.")
 
-        # 3️⃣ Embeddings allégés
         embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-
-        # 4️⃣ Vectorisation avec FAISS (en mémoire)
         vectorstore = FAISS.from_documents(splits, embeddings)
+        logger.info(f"Vectorisation réussie avec FAISS.")
 
-        # 5️⃣ Définition du prompt
         prompt_template = PromptTemplate(
             input_variables=["context", "question"],
-            template="""
-            Vous êtes un assistant virtuel représentant une entreprise.
-            Répondez de manière concise et professionnelle à la question posée en vous basant uniquement sur le contexte fourni.
-
-            Contexte : {context}
-            Question : {question}
-            Réponse :
+            template="""...
             """
         )
 
-        # 6️⃣ Création de la chaîne RAG
         retrieval_qa = RetrievalQA.from_chain_type(
-            llm=None,  # Pas de modèle local, on utilise l'API
+            llm=None,
             chain_type="stuff",
             retriever=vectorstore.as_retriever(),
             chain_type_kwargs={"prompt": prompt_template},
@@ -93,6 +82,7 @@ def create_rag_chain():
     except Exception as e:
         logger.error(f"🚨 Erreur RAG : {e}")
         return None
+
 
 # Initialisation de la chaîne RAG
 global_rag_chain = create_rag_chain()
@@ -113,9 +103,6 @@ def query_huggingface_api(prompt):
         logger.error(f"🚨 Erreur API Hugging Face: {e}")
         return "Erreur lors de la génération de texte."
 
-@app.route("/")
-def index():
-    return render_template("index.html")
 
 @app.route("/chat", methods=["POST"])
 def chat():

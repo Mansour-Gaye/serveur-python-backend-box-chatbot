@@ -40,7 +40,7 @@ CORS(app, resources={
 
 # URL FIXE et UNIQUE pour le RAG
 FIXED_URL = "https://www.vendasta.com/content-library/ai-automation-agency-website-example/"
-
+os.environ['USER_AGENT'] = 'YourAppName/1.0'
 def clean_documents(documents):
     for doc in documents:
         doc.page_content = doc.page_content.replace("vendasta.com", "")

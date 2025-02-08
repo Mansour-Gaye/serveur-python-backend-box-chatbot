@@ -1,18 +1,20 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 import logging
 import sys
 import os
+import requests
 from flask_cors import CORS
 from dotenv import load_dotenv
-from transformers import pipeline, AutoModelForCausalLM, AutoTokenizer
 from langchain_community.document_loaders import WebBaseLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import Chroma
+from langchain.prompts import PromptTemplate
+from langchain.chains import RetrievalQA
+from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
-import torch
 
 # Charger les variables d'environnement
 load_dotenv()
+HF_API_KEY = os.getenv("HF_API_KEY")
 
 # Configuration du logging
 logging.basicConfig(
@@ -22,85 +24,116 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Initialisation de Flask
+# Initialisation de l'application Flask
 app = Flask(__name__)
 CORS(app)
 
-# Récupération des variables d'environnement
-HF_API_KEY = os.getenv("HF_API_KEY")  # Clé API Hugging Face
-FIXED_URL = os.getenv("FIXED_URL", "https://ai-agency-dakar.netlify.app")
-PERSIST_DIRECTORY = "/tmp/chroma_db"  # Render autorise /tmp
+# URL FIXE et UNIQUE pour le RAG
+FIXED_URL = "https://www.vendasta.com/content-library/ai-automation-agency-website-example/"
 
-# Sélection d'un modèle léger pour Hugging Face
-MODEL_NAME = "facebook/opt-125m"
+def clean_documents(documents):
+    for doc in documents:
+        doc.page_content = doc.page_content.replace("vendasta.com", "")
+    return documents
 
-# Chargement du modèle Hugging Face avec la clé API
-def init_model():
-    try:
-        tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, use_auth_token=HF_API_KEY)
-        model = AutoModelForCausalLM.from_pretrained(MODEL_NAME, use_auth_token=HF_API_KEY)
-        return pipeline("text-generation", model=model, tokenizer=tokenizer, device=-1)  # CPU
-    except Exception as e:
-        logger.error(f"Erreur d'initialisation du modèle: {e}")
-        return None
-
-pipe = init_model()
-
-# Initialisation du RAG
 def create_rag_chain():
     try:
-        embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/paraphrase-MiniLM-L3-v2")
+        logger.info(f"🔄 Chargement des documents depuis {FIXED_URL}")
 
-        # Vérifier si ChromaDB existe déjà
-        if os.path.exists(PERSIST_DIRECTORY):
-            return Chroma(persist_directory=PERSIST_DIRECTORY, embedding_function=embeddings)
-
-        # Charger et vectoriser les documents
+        # 1️⃣ Charger et nettoyer les documents
         loader = WebBaseLoader(FIXED_URL)
-        documents = loader.load()[:2]  # Charger moins de documents pour Render
+        documents = loader.load()[:2]  # Limite à 2 documents
+        documents = clean_documents(documents)
 
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=200, chunk_overlap=20)
+        # 2️⃣ Découper les documents
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=300, chunk_overlap=50)
         splits = text_splitter.split_documents(documents)
 
-        vectorstore = Chroma.from_documents(documents=splits, embedding=embeddings, persist_directory=PERSIST_DIRECTORY)
+        # 3️⃣ Embeddings allégés
+        embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
-        return vectorstore
+        # 4️⃣ Vectorisation avec FAISS (en mémoire)
+        vectorstore = FAISS.from_documents(splits, embeddings)
+
+        # 5️⃣ Définition du prompt
+        prompt_template = PromptTemplate(
+            input_variables=["context", "question"],
+            template="""
+            Vous êtes un assistant virtuel représentant une entreprise.
+            Répondez de manière concise et professionnelle à la question posée en vous basant uniquement sur le contexte fourni.
+
+            Contexte : {context}
+            Question : {question}
+            Réponse :
+            """
+        )
+
+        # 6️⃣ Création de la chaîne RAG
+        retrieval_qa = RetrievalQA.from_chain_type(
+            llm=None,  # Pas de modèle local, on utilise l'API
+            chain_type="stuff",
+            retriever=vectorstore.as_retriever(),
+            chain_type_kwargs={"prompt": prompt_template},
+            verbose=True
+        )
+
+        logger.info("✅ Chaîne RAG prête")
+        return retrieval_qa
 
     except Exception as e:
-        logger.error(f"Erreur RAG : {e}")
+        logger.error(f"🚨 Erreur RAG : {e}")
         return None
 
-vectorstore = create_rag_chain()
+# Initialisation de la chaîne RAG
+global_rag_chain = create_rag_chain()
 
-@app.route("/health")
-def health():
-    return jsonify({"status": "healthy"}), 200
+def query_huggingface_api(prompt):
+    """Interroge l'API Hugging Face avec un modèle léger."""
+    try:
+        API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1"
+        headers = {"Authorization": f"Bearer {HF_API_KEY}"}
+        payload = {"inputs": prompt, "parameters": {"max_new_tokens": 150, "temperature": 0.5}}
+        
+        response = requests.post(API_URL, headers=headers, json=payload)
+        response.raise_for_status()
+        output = response.json()
+
+        return output[0]["generated_text"] if output else "Aucune réponse générée."
+    except Exception as e:
+        logger.error(f"🚨 Erreur API Hugging Face: {e}")
+        return "Erreur lors de la génération de texte."
+
+@app.route("/")
+def index():
+    return render_template("index.html")
 
 @app.route("/chat", methods=["POST"])
 def chat():
     try:
-        if not vectorstore or not pipe:
-            return jsonify({"error": "Modèle ou RAG non initialisé"}), 500
+        if global_rag_chain is None:
+            logger.error("Chaîne RAG non initialisée")
+            return jsonify({"message": "Le modèle RAG n'a pas pu être initialisé."}), 500
 
         data = request.json
         user_message = data.get("message", "")
+        logger.info(f"💬 Message reçu : {user_message}")
 
-        # Récupération du contexte
-        docs = vectorstore.similarity_search(user_message, k=1)
-        context = docs[0].page_content if docs else ""
+        # Recherche dans la base RAG
+        retrieval_response = global_rag_chain.invoke({"query": user_message})
+        context = retrieval_response["result"]
 
-        # Génération de réponse
-        prompt = f"Context: {context}\nQuestion: {user_message}\nRéponse:"
-        response = pipe(prompt, max_new_tokens=50, temperature=0.7)
-        answer = response[0]["generated_text"]
+        # Génération via Hugging Face API
+        full_prompt = f"Context: {context}\nQuestion: {user_message}\nRéponse:"
+        model_response = query_huggingface_api(full_prompt)
 
-        return jsonify({"response": answer})
+        return jsonify({"response": model_response})
 
     except Exception as e:
-        logger.error(f"Erreur: {e}")
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"🚨 Erreur Chat : {e}")
+        return jsonify({"response": f"Erreur : {str(e)}"}), 500
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 

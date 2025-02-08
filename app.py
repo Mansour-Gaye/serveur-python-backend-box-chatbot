@@ -17,6 +17,8 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain.llms import HuggingFaceHub
 from langchain_huggingface import HuggingFaceEndpoint
 
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 # Charger les variables d'environnement
 load_dotenv()
 HF_API_KEY = os.getenv("HUGGINGFACEHUB_API_TOKEN")

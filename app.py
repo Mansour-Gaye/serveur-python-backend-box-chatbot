@@ -78,6 +78,7 @@ def create_rag_chain():
             chain_type_kwargs={"prompt": prompt_template},
             verbose=True
         )
+       
 
         logger.info("✅ Chaîne RAG prête")
         return retrieval_qa
@@ -101,6 +102,8 @@ def query_huggingface_api(prompt):
         response.raise_for_status()
         output = response.json()
 
+        logger.info(f"Réponse Hugging Face: {output}")
+
         return output[0]["generated_text"] if output else "Aucune réponse générée."
     except Exception as e:
         logger.error(f"🚨 Erreur API Hugging Face: {e}")
@@ -120,7 +123,10 @@ def chat():
 
         # Recherche dans la base RAG
         retrieval_response = global_rag_chain.invoke({"query": user_message})
+        logger.info(f"💬 Réponse récupération contextuelle: {retrieval_response}")
         context = retrieval_response["result"]
+
+       
 
         # Génération via Hugging Face API
         full_prompt = f"Context: {context}\nQuestion: {user_message}\nRéponse:"

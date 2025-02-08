@@ -26,7 +26,17 @@ logger = logging.getLogger(__name__)
 
 # Initialisation de l'application Flask
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={
+    r"/*": {
+        "origins": [
+            "http://localhost:3000",  # Pour le développement local
+            "http://localhost:5173",  # Pour Vite en développement
+            "https://ai-agency-dakar.netlify.app"  # Votre domaine Netlify
+        ],
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"]
+    }
+})
 
 # URL FIXE et UNIQUE pour le RAG
 FIXED_URL = "https://www.vendasta.com/content-library/ai-automation-agency-website-example/"

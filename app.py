@@ -78,8 +78,8 @@ def create_rag_chain():
         # Charger et utiliser HuggingFaceEndpoint
         model = HuggingFaceEndpoint(
               repo_id="mistralai/Mistral-7B-Instruct-v0.1",
-              huggingfacehub_api_token=HF_API_KEY,  # Assurez-vous que cette variable est bien définie
-              model_kwargs={"temperature": 0.5, "max_new_tokens": 150}
+              temperature=0.5, 
+              max_new_tokens=150
         )
         if not HF_API_KEY:
              logger.error("⚠️ La clé API Hugging Face n'est pas définie ! Vérifiez votre fichier .env")

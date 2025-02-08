@@ -2,11 +2,11 @@ flask
 flask-cors
 gunicorn
 python-dotenv
-transformers==4.32.0
-torch==2.0.0
-sentence-transformers
+requests
 langchain-community
 langchain-text-splitters
-chromadb
-huggingface-hub
+langchain-huggingface
+sentence-transformers
+faiss-cpu
+
 

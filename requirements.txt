@@ -2,8 +2,11 @@ flask
 flask-cors
 gunicorn
 python-dotenv
+transformers==4.32.0
+torch==2.0.0
+sentence-transformers
 langchain-community
 langchain-text-splitters
-transformers==4.30.2  # Version stable compatible avec sentence-transformers
-sentence-transformers==2.2.2  # Éviter les bugs avec transformers 4.32+
-torch==2.0.0
+chromadb
+huggingface-hub
+

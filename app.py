@@ -64,7 +64,7 @@ def create_rag_chain():
         logger.info(f"Documents divisés en {len(splits)} chunks.")
 
         embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-        vectorstore = FAISS.from_documents(splits, embeddings, faiss_gpu=True)
+        vectorstore = FAISS.from_documents(splits, embeddings)
         logger.info(f"Vectorisation réussie avec FAISS.")
 
         prompt_template = PromptTemplate(

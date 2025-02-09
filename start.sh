@@ -1,4 +1,4 @@
 #!/bin/bash
-gunicorn -w 4 'app:app'
+gunicorn -w 1 'app:app'
 chmod +x start.sh
 

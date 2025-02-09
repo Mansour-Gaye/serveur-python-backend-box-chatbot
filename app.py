@@ -14,7 +14,8 @@ import faiss
 faiss.omp_set_num_threads(1)  # Ajuste selon le nombre de cœurs CPU disponibles
 
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain.llms import HuggingFaceHub
+from langchain_community.llms import HuggingFaceHub
+
 from langchain_huggingface import HuggingFaceEndpoint
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -164,7 +165,7 @@ def chat():
         return jsonify({"response": f"Erreur : {str(e)}"}), 500
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8080))
+    port = int(os.getenv("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
 
 
